@@ -280,7 +280,7 @@ done
 	mkdir /mnt/boot
 	mount $__boot_part0 /mnt/boot
 	if [ -f "$tmpdir/de" ]; then
-		packages_gnome="gnome gnome-extra"
+		packages_gnome="gnome"
 		packages_kde="plasma konsole konqueror dolphin"
 		packages_xfce="xfce4 xfce4-goodies"
 		for inn in $(<"$tmpdir/de"); do
