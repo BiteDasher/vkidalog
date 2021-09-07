@@ -1,0 +1,345 @@
+#!/bin/bash
+trapcom_err() {
+	rm -rf "$tmpdir"
+	exit 1
+}
+trapcom() {
+	rm -rf "$tmpdir"
+	exit 0
+}
+if [ "$(id -u)" -ne 0 ]; then
+	echo "Скрипт должен быть запущен от рута!"
+	exit 1
+fi
+
+trap trapcom_err SIGTERM SIGINT
+trap trapcom EXIT
+_get_size() {
+	local _stty _stty_1 _stty_2 _size
+	_stty="$(stty size)"
+	_stty_2="$(( ${_stty##* } / 2 ))"
+	_stty_1="$(( ${_stty%% *} / 4 * 3 ))"
+	size="$_stty_1 $_stty_2"
+	export w="${_stty_1}"
+	export h="${_stty_2}"
+}
+_start_cols=(
+             "Задать имя будущего пользователя"
+             "Задать имя хоста (/etc/hostname)"
+	     "Подключиться к сети"
+	     "Настроить часовой пояс"
+	     "Настроить зеркала через Reflector"
+	     "Разметить диск и выбрать место для установки"
+	     "Выбрать графическую среду рабочего стола"
+	     "Начать установку"
+)
+tmpdir="$(mktemp -d)"
+#dialog --menu Hello 20 30 3 "Установить Arch" "[ ]" "Часовой пояс" "[*]" "Крутой казах" "[*]"
+_choose_username() {
+	dialog --title "Выбор имени пользователя" --inputbox "Имя пользователя" 8 $h 2> "$tmpdir/username" || return 0
+	if [ -n "$(cat "$tmpdir/username" | tr -d "a-z0-9_\-\$")" ]; then
+		dialog --msgbox "Неверное имя пользователя!\n Допустимые спец.символы: _ - $" $((w/2)) $((h/2))
+		rm "$tmpdir/username"
+	else
+		>"$tmpdir/1"
+	fi
+}
+_choose_hostname() {
+	dialog --title "Выбор имени хоста" --inputbox "Имя хоста" 8 $h 2> "$tmpdir/hostname" || return 0
+	if [ -n "$(cat "$tmpdir/hostname" | tr -d "a-z\-")" ]; then
+		dialog --msgbox "Неверное имя хоста!\n Допустимые спец.символы: -" $((w/2)) $((h/2))
+		rm "$tmpdir/hostname"
+	else
+		>"$tmpdir/2"
+	fi
+}
+
+_network_ethernet() {
+	local i interface x=0
+	for i in /sys/class/net/*; do
+		interface="${i##*/}"
+		[[ "$interface" == *eth* || "$interface" == *enp* ]] || continue
+		interfaces+='"'$interface'" "" '
+		((x++))
+	done
+	if (( x > 1 )); then
+		eval 'dialog --title "Выбор Ethernet интерфейса" --menu "Выберите нужный сетевой интерфейс" '$(( 8 + $x ))' $h $x '${interfaces}'' 2>"$tmpdir/choice3" || return 0
+		export to_connect="$(<"$tmpdir/choice3")"
+	else
+		export to_connect="$interface"
+	fi
+	dhcpcd "$to_connect" 2>&1 | dialog --progressbox "Получение IP-адреса" $w $h || { dialog --msgbox "Что-то пошло не так..." $((w/2)) $((h/2)); return 1; }	
+	>"$tmpdir/3"
+}
+_network_wifi() {
+	local i interface y=0 x=0 _list _to_list line
+	for i in /sys/class/net/*; do
+		interface="${i##*/}"
+		[[ "$interface" == *wlan* || "$interface" == *wlp* ]] || continue
+		interfaces+='"'$interface'" "" '
+		((x++))
+	done
+	if (( x > 1 )); then
+		eval 'dialog --title "Выбор Wi-Fi интерфейса" --menu "Выберите нужный сетевой интерфейс" '$(( 8 + $x ))' $h $x '${interfaces}'' 2>"$tmpdir/choice3" || return 0
+		export to_connect="$(<"$tmpdir/choice3")"
+	else
+		export to_connect="$interface"
+	fi
+	killall wpa_supplicant 2>/dev/null ######
+	killall dhcpcd 2>/dev/null         ######
+	ip link set "$to_connect" up
+	_to_list="$(iwlist "$to_connect" scan 2>/dev/null)"
+	_list="$(echo "$_to_list" | grep -o "ESSID:.*" | sed 's/.*://;s/"//g')"
+	while read -r line; do
+		[ -z "$line" ] && continue
+		networks+='"'$line'" "" '
+		((y++))
+	done <<<"$_list"
+	eval 'dialog --title "Выбор Wi-Fi сети" --menu "Выберите нужную Wi-Fi сеть" '$(( 8 + $y ))' $h $y '${networks}'' 2>"$tmpdir/wifi_ssid" # || return 0
+	if [ -n "$(echo "$_to_list" | sed "/ESSID:\"$(<"$tmpdir/wifi_ssid")\"/,/Cell /!d" | grep -i -o "WPA2")" ]; then
+		dialog --title "Подключение к Wi-Fi" --insecure --passwordbox "Введите пароль сети" 8 $h 2> "$tmpdir/wifi_psk" || return 0
+	cat <<EOF > "$tmpdir/wifi.conf"
+network={
+    ssid="$(<"$tmpdir/wifi_ssid")"
+    psk="$(<"$tmpdir/wifi_psk")"
+}
+EOF
+	else
+	cat <<EOF > "$tmpdir/wifi.conf"
+network={
+    ssid="$(<"$tmpdir/wifi_ssid")"
+    key_mgmt=NONE
+}
+EOF
+	fi
+	wpa_supplicant -B -i "$to_connect" -c "$tmpdir/wifi.conf" 2>&1 || { dialog --msgbox "Во время подключения к сети что-то пошло не так..." $((w/2)) $((h/2)); return 1; }
+	dhcpcd "$to_connect" 2>&1 | dialog --progressbox "Получение IP-адреса" $w $h || { dialog --msgbox "Что-то пошло не так..." $((w/2)) $((h/2)); return 1; }	
+	>"$tmpdir/3"
+}
+_network_android() {
+	local i interfaces x=0 before after final
+	dialog --msgbox "Если кабель телефона сейчас вставлен в компьютер, отключите его, после чего нажмите OK (Enter)" $((w/2)) $((h/2))
+	for i in /sys/class/net/*; do
+		before+=("${i##*/}")
+	done
+	dialog --msgbox "Теперь вставьте телефон обратно, включите режим USB-модема и нажмите OK" $((w/2)) $((h/2))
+	for i in /sys/class/net/*; do
+		after+=("${i##*/}")
+	done
+	final="$(echo "${before[@]} ${after[@]}" | tr " " "\n" | sort | uniq -u)"
+	final="$(echo "$final" | head -n 1)"
+	if [ -z "$final" ]; then
+		dialog --msgbox "Видимо, вы сделали что-то не так, либо не включили режим USB-модема.\n Попробуйте ещё раз" $((w/2)) $((h/2))
+		return 0
+	fi
+	dhcpcd "$final" 2>&1 | dialog --progressbox "Получение IP-адреса" $w $h || { dialog --msgbox "Что-то пошло не так..." $((w/2)) $((h/2)); return 1; }
+	>"$tmpdir/3"
+}
+
+_connect_network() {
+	dialog --title "Настройка сети" --menu "Выберите метод подключения" $w $h 2 "Ethernet (кабель)" "" "Wi-Fi" "" "Раздача с андроида" "" 2> "$tmpdir/choice2" || return 0
+	case "$(<"$tmpdir/choice2")" in
+		"Ethernet (кабель)")  _network_ethernet ;;
+		"Wi-Fi")              _network_wifi     ;;
+		"Раздача с андроида") _network_android  ;;
+	esac
+	sed '/nameserver 8.8.8.8/d' -i /etc/resolv.conf
+	echo 'nameserver 8.8.8.8' >> /etc/resolv.conf
+	ping -c 3 google.com 2>&1 | dialog --progressbox "Проверка ping" $w $h || { dialog --msgbox "Что-то пошло не так..." $((w/2)) $((h/2)); return 1; }	
+}
+_setup_clocks() {
+	local _alltz i z=0
+	for i in $(find /usr/share/zoneinfo -mindepth 1 | cut -d "/" -f 5-); do
+		_alltz+='"'$i'" "" '
+		((z++))
+	done
+	eval 'dialog --title "Выбор часового пояса" --menu "Выберите ваш часовой пояс, используя стрелочки и Tab" $w $h $z '$_alltz'' 2> "$tmpdir/timezone" || return 0
+	>"$tmpdir/4"
+}
+_setup_mirrors() {
+	dialog --title "Вывод reflector" --msgbox "$(reflector --country Russia | tee /etc/pacman.d/mirrorlist || return 0)" $w $h
+	>"$tmpdir/5"
+}
+_part_disk() {
+	local _alldisks _alldisks2 _alldisks3 i n z=0 _disks _disks2 m v _disks3
+	dialog --msgbox "Сейчас вы будете перенаправлены в cfdisk, программу для разбиения дисков.\nВам необходимо создать:\n 1. Корневой раздел\n 2. swap-раздел (по-желанию)\n 3. EFI-раздел\nА также запомнить номер раздела и точку монтирования каждого, а позже указать их. Изучите информацию о разбиении дисков и продолжайте." $w $h
+	_alldisks="$(lsblk -d -r -n -o NAME)"
+	while read -r i; do
+		_disks+=("$i")
+	done <<<"$_alldisks"
+	for m in $_alldisks; do
+		_disks2+='"'$m'" "" '
+		((z++))
+	done
+	export _alldisks
+	eval 'dialog --title "Выбор диска для разметки" --menu "Выберите диск, на который хотите установите ОС" $w $h $z '$_disks2'' 2> "$tmpdir/choice4" || return 0
+	cfdisk /dev/"$(<"$tmpdir/choice4")" || { dialog --msgbox "Во время работы с cfdisk что-то пошло не так..." $((w/2)) $((h/2)); return 1; }
+	_alldisks3="$(lsblk /dev/sda -o NAME -r -n -p | grep -x -v "/dev/$(<"$tmpdir/choice4")")"
+	for v in $_alldisks3; do
+		_disks3+='"'$v'" "" '
+	done
+	eval 'dialog --title "Корневой раздел" --menu "Выберите раздел, на который хотите установите ОС" $w $h $z '$_disks3'' 2> "$tmpdir/root_partition" || return 0	
+	unset _disks3
+	_alldisks3="$(lsblk /dev/sda -o NAME -r -n -p | grep -x -v "/dev/$(<"$tmpdir/choice4")" | grep -x -v "$(<"$tmpdir/root_partition")")"
+	for v in $_alldisks3; do
+		_disks3+='"'$v'" "" '
+	done
+	eval 'dialog --title "Раздел подкачки (необязательно)" --menu "Выберите раздел для подкачки (выберите Отмена, если не хотите его создавать)" $w $h $z '$_disks3'' 2> "$tmpdir/swap_partition" || :
+	unset _disks3
+	_alldisks3="$(lsblk /dev/sda -o NAME -r -n -p | grep -x -v "/dev/$(<"$tmpdir/choice4")" | grep -x -v "$(<"$tmpdir/root_partition")" | grep -x -v "$(<"$tmpdir/swap_partition")")"
+	for v in $_alldisks3; do
+		_disks3+='"'$v'" "" '
+	done
+	eval 'dialog --title "Загрузочный EFI раздел" --menu "Раздел загрузки (/boot)" $w $h $z '$_disks3'' 2> "$tmpdir/efi_partition" || return 0
+	>"$tmpdir/6"
+}
+_choose_apps() {
+	dialog --title "Установка среды рабочего стола (по-желанию)" --checklist "Выбор одной/нескольких сред рабочего стола" $w $h 3 "KDE" "Среда рабочего стола KDE" 0 "GNOME" "Среда рабочего стола GNOME" on "XFCE" "Среда рабочего стола XFCE" 0 2> "$tmpdir/de"
+	dialog --title "Выбор дисплейного менеджера (вы можете знать его как \"экран блокировки\")" --radiolist "Выбор одного из менеджеров логина" $w $h 3 "LightDM" "" 0 "SDDM" "" 0 "GDM" "" on 2> "$tmpdir/dm"
+	>"$tmpdir/7"
+}
+_start_install() {
+	local _error=0
+	[ -f "$tmpdir/1" ] || _error=1
+	[ -f "$tmpdir/2" ] || _error=1
+	[ -f "$tmpdir/4" ] || _error=1
+	[ -f "$tmpdir/6" ] || _error=1
+	if [ "$_error" == 1 ]; then
+		dialog --msgbox "Вы не завершили обязательные пункты!" $((w/2)) $((h/2))
+		return 1
+	fi
+	>"$tmpdir/complete"
+}
+
+[ "$(tty | grep tty)" ] && { setfont cyr-sun16; loadkeys ru; }
+_get_size
+#systemctl stop systemd-resolved || :
+####################
+_choose_username
+_choose_hostname
+_connect_network
+_setup_clocks
+_setup_mirrors
+_part_disk
+_choose_apps
+_start_install
+####################
+while [ ! -f "$tmpdir/complete" ]; do
+_vars="$(
+_k=1
+for i in "${_start_cols[@]}"; do
+	[ -f "$tmpdir/$_k" ] && status="[*]" || status="[ ]"
+	echo '"'$i'" "'$status'"'
+	((_k++))
+done
+)"
+eval 'dialog --backtitle "Русский инсталлятор Арч Линукса" --title "vkidalog" --menu "Ctrl+Shift для переключения раскладки; Ctrl+C для выхода; для управления: стрелочки, Tab, Enter, Esc" $w $h ${#_start_cols[*]} '$_vars'' 2> "$tmpdir/choice" || exit 0
+	case "$(<"$tmpdir/choice")" in
+		"${_start_cols[0]}") _choose_username  ;;
+		"${_start_cols[1]}") _choose_hostname  ;;
+		"${_start_cols[2]}") _connect_network  ;;
+		"${_start_cols[3]}") _setup_clocks     ;;
+		"${_start_cols[4]}") _setup_mirrors    ;;
+		"${_start_cols[5]}") _part_disk        ;;
+		"${_start_cols[6]}") _choose_apps      ;;
+		"${_start_cols[7]}") _start_install    ;;
+	esac
+done
+	#_error=0
+	#[ -f "$tmpdir/1" ] || _error=1
+	#[ -f "$tmpdir/2" ] || _error=1
+	#[ -f "$tmpdir/4" ] || _error=1
+	#[ -f "$tmpdir/6" ] || _error=1
+	#if [ "$_error" == 1 ]; then
+	#	continue
+	#fi
+	##### Installation time
+	clear
+	echo "==> Форматирую выбранные разделы на диске"
+	__disk="$(<"$tmpdir/choice4")"
+	__root_part0="$(<"$tmpdir/root_partition")"
+	__root_part1="$(cat /sys/class/block/${__root_part0##*/}/partition)"
+	__boot_part0="$(<"$tmpdir/efi_partition")"
+	__boot_part1="$(cat /sys/class/block/${__boot_part0##*/}/partition)"
+	__part_uuid="$(lsblk -o PARTUUID $__root_part0 -r -n)"
+	sgdisk -t $__root_part1:0FC63DAF-8483-4772-8E79-3D69D8477DE4 /dev/"$__disk"
+	if [ -f "$tmpdir/swap_partition" ]; then
+	__swap_part0="$(<"$tmpdir/swap_partition")"
+	__swap_part1="$(cat /sys/class/block/${__swap_part0##*/}/partition)"
+	sgdisk -t $__swap_part1:0657FD6D-A4AB-43C4-84E5-0933C84B4F4F /dev/"$__disk"
+	fi
+	sgdisk -t $__boot_part1:C12A7328-F81F-11D2-BA4B-00A0C93EC93B /dev/"$__disk"
+	echo "==> Создаю файловые системы на выбранных разделах"
+	mkfs.ext4 $__root_part0
+	mkfs.vfat -F32 $__boot_part0
+	mkswap $__swap_part0
+	swapon $__swap_part0
+	mount $__root_part0 /mnt
+	mkdir /mnt/boot
+	mount $__boot_part0 /mnt/boot
+	if [ -f "$tmpdir/de" ]; then
+		packages_gnome="gnome gnome-extra"
+		packages_kde="plasma konsole konqueror dolphin"
+		packages_xfce="xfce4 xfce4-goodies"
+		for inn in $(<"$tmpdir/de"); do
+			case "$inn" in
+				KDE) packages+=("$packages_kde") ;;
+				GNOME) packages+=("$packages_gnome") ;;
+				XFCE) packages+=("$packages_xfce") ;;
+			esac
+		done
+	fi
+	if [ -f "$tmpdir/dm" ]; then
+		case "$(<"$tmpdir/dm")" in
+			LightDM) packages+=("lightdm") ;;
+			SDDM) packages+=("sddm") ;;
+			GDM) packages+=("gdm") ;;
+		esac
+	fi
+	pacstrap /mnt base base-devel linux linux-firmware vim nano git fakeroot binutils networkmanager xf86-video-intel xf86-video-amdgpu xf86-video-nouveau ${packages[@]}
+	genfstab -t PARTUUID /mnt >> /mnt/etc/fstab
+	cat <<__EOF > /mnt/usr/local/bin/install_arch
+#!/bin/bash
+name=$(<"$tmpdir/username")
+tz="$(<"$tmpdir/timezone")"
+host=$(<"$tmpdir/hostname")
+echo "==> Делаю симлинк на часовой пояс"; sleep 1
+ln -sf /usr/share/zoneinfo/\$tz /etc/localtime
+echo "==> Настраиваю время"
+hwclock --systohc
+echo "==> Настраиваю локалии"
+sed 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/g' -i /etc/locale.gen
+sed 's/^#ru_RU.UTF-8 UTF-8/ru_RU.UTF-8 UTF-8/g' -i /etc/locale.gen
+locale-gen
+echo "LANG=ru_RU.UTF-8" > /etc/locale.conf
+echo "==> Настраиваю tty"
+echo "KEYMAP=ru" >> /etc/vconsole.conf
+echo "FONT=cyr-sun16" >> /etc/vconsole.conf
+echo "==> Ставлю имя хоста"
+echo \$host >> /etc/hostname
+echo "==> Настраиваю сеть"
+echo "127.0.0.1 localhost" >> /etc/hosts
+echo "::1 localhost" >> /etc/hosts
+echo "<== Настройка пароля для root"
+passwd root
+echo "==> Создание пользователя \$name"
+useradd -m -u 1000 -U -G wheel -s /bin/bash \$name
+echo "<== Настройка пароля для \$name"
+passwd \$name
+echo "==> Настраиваю sudo"; sleep 1
+sed 's/^# %wheel ALL=(ALL) ALL/%wheel ALL=(ALL) ALL/g' -i /etc/sudoers
+echo "==> Ставлю systemd-boot"; sleep 1
+bootctl install
+cat <<EOF > /boot/loader/entries/arch.conf
+title          Arch Linux
+linux          /vmlinuz-linux
+initrd         /initramfs-linux.img
+options        root=PARTUUID=$__part_uuid rw
+EOF
+echo "==> Готово!"
+__EOF
+echo "Вхожу в chroot"; sleep 1
+chmod +x /mnt/usr/local/bin/install_arch
+arch-chroot /mnt /usr/local/bin/install_arch
+rm /mnt/usr/local/bin/install_arch
+>"$tmpdir/complete"
