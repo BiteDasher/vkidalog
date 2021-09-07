@@ -272,8 +272,10 @@ done
 	echo "==> Создаю файловые системы на выбранных разделах"
 	mkfs.ext4 $__root_part0
 	mkfs.vfat -F32 $__boot_part0
+	if [ -f "$tmpdir/swap_partition" ]; then
 	mkswap $__swap_part0
 	swapon $__swap_part0
+	fi
 	mount $__root_part0 /mnt
 	mkdir /mnt/boot
 	mount $__boot_part0 /mnt/boot
