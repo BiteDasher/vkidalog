@@ -37,6 +37,10 @@ tmpdir="$(mktemp -d)"
 #dialog --menu Hello 20 30 3 "Установить Arch" "[ ]" "Часовой пояс" "[*]" "Крутой казах" "[*]"
 _choose_username() {
 	dialog --title "Выбор имени пользователя" --inputbox "Имя пользователя" 8 $h 2> "$tmpdir/username" || return 0
+	if [ -z "$(<"$tmpdir/username")" ]; then
+		dialog --msgbox "Вы не ввели имя пользователя!" $((w/2)) $((h/2))
+		return 1
+	fi
 	if [ -n "$(cat "$tmpdir/username" | tr -d "a-z0-9_\-\$")" ]; then
 		dialog --msgbox "Неверное имя пользователя!\n Допустимые спец.символы: _ - $" $((w/2)) $((h/2))
 		rm "$tmpdir/username"
@@ -46,6 +50,10 @@ _choose_username() {
 }
 _choose_hostname() {
 	dialog --title "Выбор имени хоста" --inputbox "Имя хоста" 8 $h 2> "$tmpdir/hostname" || return 0
+	if [ -z "$(<"$tmpdir/hostname")" ]; then
+		dialog --msgbox "Вы не ввели имя хоста!" $((w/2)) $((h/2))
+		return 1
+	fi
 	if [ -n "$(cat "$tmpdir/hostname" | tr -d "a-z\-")" ]; then
 		dialog --msgbox "Неверное имя хоста!\n Допустимые спец.символы: -" $((w/2)) $((h/2))
 		rm "$tmpdir/hostname"
@@ -154,6 +162,10 @@ _setup_clocks() {
 		((z++))
 	done
 	eval 'dialog --title "Выбор часового пояса" --menu "Выберите ваш часовой пояс, используя стрелочки и Tab" $w $h $z '$_alltz'' 2> "$tmpdir/timezone" || return 0
+	if [ -z "$(<"$tmpdir/timezone")" ]; then
+		dialog --msgbox "Вы не выбрали часовой пояс!\n\n Если живёте в Москве/Питере:\nEurope/Moscow" $((w/2)) $((h/2))
+		return 1
+	fi
 	>"$tmpdir/4"
 }
 _setup_mirrors() {
@@ -174,19 +186,19 @@ _part_disk() {
 	export _alldisks
 	eval 'dialog --title "Выбор диска для разметки" --menu "Выберите диск, на который хотите установите ОС" $w $h $z '$_disks2'' 2> "$tmpdir/choice4" || return 0
 	cfdisk /dev/"$(<"$tmpdir/choice4")" || { dialog --msgbox "Во время работы с cfdisk что-то пошло не так..." $((w/2)) $((h/2)); return 1; }
-	_alldisks3="$(lsblk /dev/sda -o NAME -r -n -p | grep -x -v "/dev/$(<"$tmpdir/choice4")")"
+	_alldisks3="$(lsblk /dev/"$(<"$tmpdir/choice4")" -o NAME -r -n -p | grep -x -v "/dev/$(<"$tmpdir/choice4")")"
 	for v in $_alldisks3; do
 		_disks3+='"'$v'" "" '
 	done
 	eval 'dialog --title "Корневой раздел" --menu "Выберите раздел, на который хотите установите ОС" $w $h $z '$_disks3'' 2> "$tmpdir/root_partition" || return 0	
 	unset _disks3
-	_alldisks3="$(lsblk /dev/sda -o NAME -r -n -p | grep -x -v "/dev/$(<"$tmpdir/choice4")" | grep -x -v "$(<"$tmpdir/root_partition")")"
+	_alldisks3="$(lsblk /dev/"$(<"$tmpdir/choice4")" -o NAME -r -n -p | grep -x -v "/dev/$(<"$tmpdir/choice4")" | grep -x -v "$(<"$tmpdir/root_partition")")"
 	for v in $_alldisks3; do
 		_disks3+='"'$v'" "" '
 	done
 	eval 'dialog --title "Раздел подкачки (необязательно)" --menu "Выберите раздел для подкачки (выберите Отмена, если не хотите его создавать)" $w $h $z '$_disks3'' 2> "$tmpdir/swap_partition" || :
 	unset _disks3
-	_alldisks3="$(lsblk /dev/sda -o NAME -r -n -p | grep -x -v "/dev/$(<"$tmpdir/choice4")" | grep -x -v "$(<"$tmpdir/root_partition")" | grep -x -v "$(<"$tmpdir/swap_partition")")"
+	_alldisks3="$(lsblk /dev/"$(<"$tmpdir/choice4")" -o NAME -r -n -p | grep -x -v "/dev/$(<"$tmpdir/choice4")" | grep -x -v "$(<"$tmpdir/root_partition")" | grep -x -v "$(<"$tmpdir/swap_partition")")"
 	for v in $_alldisks3; do
 		_disks3+='"'$v'" "" '
 	done
