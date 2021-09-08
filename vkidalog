@@ -305,9 +305,12 @@ done
 	fi
 	if [ -f "$tmpdir/dm" ]; then
 		case "$(<"$tmpdir/dm")" in
-			LightDM) packages+=("lightdm") ;;
-			SDDM) packages+=("sddm") ;;
-			GDM) packages+=("gdm") ;;
+			LightDM) packages+=("lightdm")
+				 systemctlr="systemctl enable lightdm" ;;
+			SDDM) packages+=("sddm")
+			      systemctlr="systemctl enable sddm" ;;
+			GDM) packages+=("gdm")
+			     systemctlr="systemctl enable gdm" ;;
 		esac
 	fi
 	pacstrap /mnt base base-devel linux linux-firmware vim nano git fakeroot binutils networkmanager xf86-video-intel xf86-video-amdgpu xf86-video-nouveau ${packages[@]}
@@ -350,6 +353,7 @@ linux          /vmlinuz-linux
 initrd         /initramfs-linux.img
 options        root=PARTUUID=$__part_uuid rw
 EOF
+$systemctlr
 echo "==> Готово!"
 __EOF
 echo "Вхожу в chroot"; sleep 1
