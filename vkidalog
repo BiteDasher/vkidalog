@@ -96,8 +96,12 @@ _network_wifi() {
 	killall wpa_supplicant 2>/dev/null ######
 	killall dhcpcd 2>/dev/null         ######
 	ip link set "$to_connect" up
+	unset _to_list
+	while [ -z "$_to_list" ] && dialog --infobox "Сканирование Wi-Fi сетей..." 6 $h; do
 	_to_list="$(iwlist "$to_connect" scan 2>/dev/null)"
+	done
 	_list="$(echo "$_to_list" | grep -o "ESSID:.*" | sed 's/.*://;s/"//g')"
+	[ -n "$_list" ] || { dialog --msgbox "Wi-Fi сети не найдены..." $((w/2)) $((h/2)); return 1; }
 	while read -r line; do
 		[ -z "$line" ] && continue
 		networks+='"'$line'" "" '
@@ -355,6 +359,7 @@ initrd         /initramfs-linux.img
 options        root=PARTUUID=$__part_uuid rw
 EOF
 $systemctlr
+systemctl enable NetworkManager
 echo "==> Готово!"
 __EOF
 echo "Вхожу в chroot"; sleep 1
