@@ -66,7 +66,7 @@ _network_ethernet() {
 	local i interface x=0
 	for i in /sys/class/net/*; do
 		interface="${i##*/}"
-		[[ "$interface" == *eth* || "$interface" == *enp* ]] || continue
+		[[ "$interface" == *eth* || "$interface" == *enp* || "$interface" == *ens* ]] || continue
 		interfaces+='"'$interface'" "" '
 		((x++))
 	done
