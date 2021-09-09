@@ -232,6 +232,9 @@ _start_install() {
 [ "$(tty | grep tty)" ] && { setfont cyr-sun16; loadkeys ru; }
 _get_size
 #systemctl stop systemd-resolved || :
+if [[ "$1" == step* ]]; then
+	:
+else
 ####################
 _choose_username
 _choose_hostname
@@ -242,6 +245,7 @@ _part_disk
 _choose_apps
 _start_install
 ####################
+fi
 while [ ! -f "$tmpdir/complete" ]; do
 _vars="$(
 _k=1
