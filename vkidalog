@@ -130,11 +130,11 @@ EOF
 }
 _network_android() {
 	local i interfaces x=0 before after final
-	dialog --msgbox "Если кабель телефона сейчас вставлен в компьютер, отключите его, после чего нажмите OK (Enter)" $((w/2)) $((h/2)) || return 0
+	dialog --msgbox "Если кабель телефона сейчас вставлен в компьютер, отключите его, после чего нажмите OK (Enter)" $((w/2)) $((h/2))
 	for i in /sys/class/net/*; do
 		before+=("${i##*/}")
 	done
-	dialog --msgbox "Теперь вставьте телефон обратно, включите режим USB-модема и нажмите OK" $((w/2)) $((h/2)) || return 0
+	dialog --msgbox "Теперь вставьте телефон обратно, включите режим USB-модема и нажмите OK" $((w/2)) $((h/2))
 	for i in /sys/class/net/*; do
 		after+=("${i##*/}")
 	done
