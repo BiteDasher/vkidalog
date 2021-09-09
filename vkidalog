@@ -34,7 +34,7 @@ _start_cols=(
 	     "Начать установку"
 )
 tmpdir="$(mktemp -d)"
-#dialog --menu Hello 20 30 3 "Установить Arch" "[ ]" "Часовой пояс" "[*]" "Крутой казах" "[*]"
+# Ыыыыы
 _choose_username() {
 	dialog --title "Выбор имени пользователя" --inputbox "Имя пользователя" 8 $h 2> "$tmpdir/username" || return 0
 	if [ -z "$(<"$tmpdir/username")" ]; then
@@ -103,7 +103,7 @@ _network_wifi() {
 		networks+='"'$line'" "" '
 		((y++))
 	done <<<"$_list"
-	eval 'dialog --title "Выбор Wi-Fi сети" --menu "Выберите нужную Wi-Fi сеть" '$(( 8 + $y ))' $h $y '${networks}'' 2>"$tmpdir/wifi_ssid" # || return 0
+	eval 'dialog --title "Выбор Wi-Fi сети" --menu "Выберите нужную Wi-Fi сеть" '$(( 8 + $y ))' $h $y '${networks}'' 2>"$tmpdir/wifi_ssid"  || return 0
 	if [ -n "$(echo "$_to_list" | sed "/ESSID:\"$(<"$tmpdir/wifi_ssid")\"/,/Cell /!d" | grep -i -o "WPA2")" ]; then
 		dialog --title "Подключение к Wi-Fi" --insecure --passwordbox "Введите пароль сети" 8 $h 2> "$tmpdir/wifi_psk" || return 0
 	cat <<EOF > "$tmpdir/wifi.conf"
@@ -126,11 +126,11 @@ EOF
 }
 _network_android() {
 	local i interfaces x=0 before after final
-	dialog --msgbox "Если кабель телефона сейчас вставлен в компьютер, отключите его, после чего нажмите OK (Enter)" $((w/2)) $((h/2))
+	dialog --msgbox "Если кабель телефона сейчас вставлен в компьютер, отключите его, после чего нажмите OK (Enter)" $((w/2)) $((h/2)) || return 0
 	for i in /sys/class/net/*; do
 		before+=("${i##*/}")
 	done
-	dialog --msgbox "Теперь вставьте телефон обратно, включите режим USB-модема и нажмите OK" $((w/2)) $((h/2))
+	dialog --msgbox "Теперь вставьте телефон обратно, включите режим USB-модема и нажмите OK" $((w/2)) $((h/2)) || return 0
 	for i in /sys/class/net/*; do
 		after+=("${i##*/}")
 	done
@@ -203,6 +203,7 @@ _part_disk() {
 		_disks3+='"'$v'" "" '
 	done
 	eval 'dialog --title "Загрузочный EFI раздел" --menu "Раздел загрузки (/boot)" $w $h $z '$_disks3'' 2> "$tmpdir/efi_partition" || return 0
+	[ -n "$(<"$tmpdir/efi_partition")" ] || return 1 #####
 	>"$tmpdir/6"
 }
 _choose_apps() {
