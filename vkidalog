@@ -201,6 +201,7 @@ _part_disk() {
 		_disks3+='"'$v'" "" '
 	done
 	eval 'dialog --title "Раздел подкачки (необязательно)" --menu "Выберите раздел для подкачки (выберите Отмена, если не хотите его создавать)" $w $h $z '$_disks3'' 2> "$tmpdir/swap_partition" || :
+	[ -n "$(<"$tmpdir/swap_partition")" ] || rm "$tmpdir/swap_partition"
 	unset _disks3
 	_alldisks3="$(lsblk /dev/"$(<"$tmpdir/choice4")" -o NAME -r -n -p | grep -x -v "/dev/$(<"$tmpdir/choice4")" | grep -x -v "$(<"$tmpdir/root_partition")" | grep -x -v "$(<"$tmpdir/swap_partition")")"
 	for v in $_alldisks3; do
