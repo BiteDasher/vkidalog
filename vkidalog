@@ -1,7 +1,7 @@
 #!/bin/bash
 [ "$(tty | grep tty)" ] && { setfont cyr-sun16; loadkeys ru; }
-[[ "$(tty | grep tty)" && "$(systemd-detect-virt)" == "vmware" ]] && setterm --default
 if [ ! -t 0 ]; then echo "Скрипт не должен быть запущен через пайп ( | )" >&2; echo "Запустите его напрямую через ./vkidalog или bash ./vkidalog" >&2; exit 1; fi
+[[ "$(tty | grep tty)" && "$(systemd-detect-virt)" == "vmware" ]] && setterm --default
 trapcom_err() {
 	rm -rf "$tmpdir"
 	exit 1
