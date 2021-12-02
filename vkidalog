@@ -256,7 +256,7 @@ _start_install() {
 if ! { pacman -Q dialog &>/dev/null && pacman -Q ncurses &>/dev/null; }; then
 	echo "Похоже, у вас не установлены dialog и ncurses."
 	echo "Устаналиваю..."
-	pacman -Sy dialog ncurses || {
+	pacman -Sy --noconfirm dialog ncurses || {
 		echo "Установить пакеты не получилось :(" >&2
 		echo "Попробуйте проверить зеркала/количество свободного места в LiveCD, а затем установите пакеты самостоятельно" >&2
 		exit 1
