@@ -1,4 +1,6 @@
 #!/bin/bash
+[ "$(tty | grep tty)" ] && { setfont cyr-sun16; loadkeys ru; }
+[[ "$(tty | grep tty)" && "$(systemd-detect-virt)" == "vmware" ]] && setterm --default
 if [ ! -t 0 ]; then echo "Скрипт не должен быть запущен через пайп ( | )" >&2; echo "Запустите его напрямую через ./vkidalog или bash ./vkidalog" >&2; exit 1; fi
 trapcom_err() {
 	rm -rf "$tmpdir"
@@ -259,8 +261,6 @@ if ! { pacman -Q dialog &>/dev/null && pacman -Q ncurses &>/dev/null; }; then
 		exit 1
 	}
 fi
-[ "$(tty | grep tty)" ] && { setfont cyr-sun16; loadkeys ru; }
-[[ "$(tty | grep tty)" && "$(systemd-detect-virt)" == "vmware" ]] && setterm --default
 _get_size
 #systemctl stop systemd-resolved || :
 if [[ "$1" == step* ]]; then
