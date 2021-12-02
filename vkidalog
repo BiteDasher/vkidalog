@@ -263,6 +263,11 @@ if ! { pacman -Q dialog &>/dev/null && pacman -Q ncurses &>/dev/null; }; then
 		exit 1
 	}
 fi
+if [ -n "$(grep -o /etc/pacman.conf '^#.*ParallelDownloads.*')" ]; then
+	echo "Настраиваю конфиг pacman..."
+	sed 's/^#.*ParallelDownload.*/ParallelDownloads = 5/' -i /etc/pacman.conf
+	sed 's/^#.*Color/Color/' -i /etc/pacman.conf
+fi
 _get_size
 #systemctl stop systemd-resolved || :
 if [[ "$1" == step* ]]; then
@@ -405,6 +410,11 @@ linux          /vmlinuz-linux
 initrd         /initramfs-linux.img
 options        root=PARTUUID=$__part_uuid rw
 EOF
+echo "==> Настраиваю конфиг pacman"
+sed '/^.*\#.*\[multilib\]/,+1 s/# *//' -i /etc/pacman.conf
+sed 's/^#.*ParallelDownload.*/ParallelDownloads = 5/' -i /etc/pacman.conf
+sed 's/^#.*Color/Color/' -i /etc/pacman.conf
+echo "==> Включаю необходимые сервисы"
 $systemctlr
 systemctl enable NetworkManager
 echo "==> Готово!"
