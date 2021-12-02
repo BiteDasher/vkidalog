@@ -54,7 +54,7 @@ _choose_username() {
 	fi
 }
 _choose_passwd_user() {
-	dialog --title "Введите пароль для будущего пользователя" --insecure --inputbox "Пароль" 8 $h 2> "$tmpdir/passwd_user" || return 0
+	dialog --title "Введите пароль для будущего пользователя" --insecure --passwordbox "Пароль" 8 $h 2> "$tmpdir/passwd_user" || return 0
 	if [ -z "$(<"$tmpdir/passwd_user")" ]; then
 		dialog --msgbox "Вы не ввели пароль пользователя!" $((w/2)) $((h/2))
 		return 1
@@ -62,7 +62,7 @@ _choose_passwd_user() {
 	>"$tmpdir/2"
 }
 _choose_passwd_root() {
-	dialog --title "Введите пароль для суперпользователя (root)" --insecure --inputbox "Пароль" 8 $h 2> "$tmpdir/passwd_root" || return 0
+	dialog --title "Введите пароль для суперпользователя (root)" --insecure --passwordbox "Пароль" 8 $h 2> "$tmpdir/passwd_root" || return 0
 	if [ -z "$(<"$tmpdir/passwd_root")" ]; then
 		dialog --msgbox "Вы не ввели пароль суперпользователя!" $((w/2)) $((h/2))
 		return 1
