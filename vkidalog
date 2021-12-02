@@ -211,7 +211,8 @@ _part_disk() {
 	export _alldisks
 	eval 'dialog --title "Выбор диска для разметки" --menu "Выберите диск, на который хотите установите ОС" $w $h $z '$_disks2'' 2> "$tmpdir/choice4" || return 0
 	cfdisk /dev/"$(<"$tmpdir/choice4")" || { dialog --msgbox "Во время работы с cfdisk что-то пошло не так..." $((w/2)) $((h/2)); return 1; }
-	sync
+	sync      #
+	partprobe #
 	_alldisks3="$(lsblk /dev/"$(<"$tmpdir/choice4")" -o NAME -r -n -p | grep -x -v "/dev/$(<"$tmpdir/choice4")")"
 	for v in $_alldisks3; do
 		_disks3+='"'$v'" "" '
