@@ -8,7 +8,12 @@ trapcom() {
 	exit 0
 }
 if [ "$(id -u)" -ne 0 ]; then
-	echo "Скрипт должен быть запущен от рута!"
+	echo "Скрипт должен быть запущен от рута!" >&2
+	exit 1
+fi
+if [ ! -t 0 ]; then
+	echo "Скрипт не должен быть запущен через пайп ( | )" >&2
+	echo "Запустите его напрямую через ./vkidalog или bash ./vkidalog" >&2
 	exit 1
 fi
 
@@ -25,6 +30,8 @@ _get_size() {
 }
 _start_cols=(
              "Задать имя будущего пользователя"
+	     "Задать пароль будущего пользователя"
+	     "Задать пароль суперпользователя (root)"
              "Задать имя хоста (/etc/hostname)"
 	     "Подключиться к сети"
 	     "Настроить часовой пояс"
@@ -48,6 +55,22 @@ _choose_username() {
 		>"$tmpdir/1"
 	fi
 }
+_choose_passwd_user() {
+	dialog --title "Введите пароль для будущего пользователя" --insecure --inputbox "Пароль" 8 $h 2> "$tmpdir/passwd_user" || return 0
+	if [ -z "$(<"$tmpdir/passwd_user")" ]; then
+		dialog --msgbox "Вы не ввели пароль пользователя!" $((w/2)) $((h/2))
+		return 1
+	fi
+	>"$tmpdir/2"
+}
+_choose_passwd_root() {
+	dialog --title "Введите пароль для суперпользователя (root)" --insecure --inputbox "Пароль" 8 $h 2> "$tmpdir/passwd_root" || return 0
+	if [ -z "$(<"$tmpdir/passwd_root")" ]; then
+		dialog --msgbox "Вы не ввели пароль суперпользователя!" $((w/2)) $((h/2))
+		return 1
+	fi
+	>"$tmpdir/3"
+}
 _choose_hostname() {
 	dialog --title "Выбор имени хоста" --inputbox "Имя хоста" 8 $h 2> "$tmpdir/hostname" || return 0
 	if [ -z "$(<"$tmpdir/hostname")" ]; then
@@ -58,7 +81,7 @@ _choose_hostname() {
 		dialog --msgbox "Неверное имя хоста!\n Допустимые спец.символы: -" $((w/2)) $((h/2))
 		rm "$tmpdir/hostname"
 	else
-		>"$tmpdir/2"
+		>"$tmpdir/4"
 	fi
 }
 
@@ -77,7 +100,7 @@ _network_ethernet() {
 		export to_connect="$interface"
 	fi
 	dhcpcd "$to_connect" 2>&1 | dialog --progressbox "Получение IP-адреса" $w $h || { dialog --msgbox "Что-то пошло не так..." $((w/2)) $((h/2)); return 1; }	
-	>"$tmpdir/3"
+	>"$tmpdir/5"
 }
 _network_wifi() {
 	local i interface y=0 x=0 _list _to_list line
@@ -126,7 +149,7 @@ EOF
 	fi
 	wpa_supplicant -B -i "$to_connect" -c "$tmpdir/wifi.conf" 2>&1 || { dialog --msgbox "Во время подключения к сети что-то пошло не так..." $((w/2)) $((h/2)); return 1; }
 	dhcpcd "$to_connect" 2>&1 | dialog --progressbox "Получение IP-адреса" $w $h || { dialog --msgbox "Что-то пошло не так..." $((w/2)) $((h/2)); return 1; }	
-	>"$tmpdir/3"
+	>"$tmpdir/5"
 }
 _network_android() {
 	local i interfaces x=0 before after final
@@ -145,7 +168,7 @@ _network_android() {
 		return 0
 	fi
 	dhcpcd "$final" 2>&1 | dialog --progressbox "Получение IP-адреса" $w $h || { dialog --msgbox "Что-то пошло не так..." $((w/2)) $((h/2)); return 1; }
-	>"$tmpdir/3"
+	>"$tmpdir/5"
 }
 
 _connect_network() {
@@ -170,11 +193,11 @@ _setup_clocks() {
 		dialog --msgbox "Вы не выбрали часовой пояс!\n\n Если живёте в Москве/Питере:\nEurope/Moscow" $((w/2)) $((h/2))
 		return 1
 	fi
-	>"$tmpdir/4"
+	>"$tmpdir/6"
 }
 _setup_mirrors() {
 	dialog --title "Вывод reflector" --msgbox "$(reflector --country Russia | tee /etc/pacman.d/mirrorlist || return 0)" $w $h
-	>"$tmpdir/5"
+	>"$tmpdir/7"
 }
 _part_disk() {
 	local _alldisks _alldisks2 _alldisks3 i n z=0 _disks _disks2 m v _disks3
@@ -209,19 +232,21 @@ _part_disk() {
 	done
 	eval 'dialog --title "Загрузочный EFI раздел" --menu "Раздел загрузки (/boot)" $w $h $z '$_disks3'' 2> "$tmpdir/efi_partition" || return 0
 	[ -n "$(<"$tmpdir/efi_partition")" ] || return 1 #####
-	>"$tmpdir/6"
+	>"$tmpdir/8"
 }
 _choose_apps() {
-	dialog --title "Установка среды рабочего стола (по-желанию)" --checklist "Выбор одной/нескольких сред рабочего стола" $w $h 3 "KDE" "Среда рабочего стола KDE" 0 "GNOME" "Среда рабочего стола GNOME" on "XFCE" "Среда рабочего стола XFCE" 0 2> "$tmpdir/de"
+	dialog --title "Установка среды рабочего стола (по-желанию)" --checklist "Выбор одной/нескольких сред рабочего стола" $w $h 4 "KDE" "Среда рабочего стола KDE" 0 "GNOME" "Среда рабочего стола GNOME" on "XFCE" "Среда рабочего стола XFCE" 0 "Enlightenment" "Среда рабочего стола Enlightenment" 0 2> "$tmpdir/de"
 	dialog --title "Выбор дисплейного менеджера (вы можете знать его как \"экран блокировки\")" --radiolist "Выбор одного из менеджеров логина" $w $h 3 "LightDM" "" 0 "SDDM" "" 0 "GDM" "" on 2> "$tmpdir/dm"
-	>"$tmpdir/7"
+	>"$tmpdir/9"
 }
 _start_install() {
 	local _error=0
 	[ -f "$tmpdir/1" ] || _error=1
 	[ -f "$tmpdir/2" ] || _error=1
+	[ -f "$tmpdir/3" ] || _error=1
 	[ -f "$tmpdir/4" ] || _error=1
 	[ -f "$tmpdir/6" ] || _error=1
+	[ -f "$tmpdir/8" ] || _error=1
 	if [ "$_error" == 1 ]; then
 		dialog --msgbox "Вы не завершили обязательные пункты!" $((w/2)) $((h/2))
 		return 1
@@ -229,6 +254,15 @@ _start_install() {
 	>"$tmpdir/complete"
 }
 
+if ! { pacman -Q dialog &>/dev/null && pacman -Q ncurses &>/dev/null; }; then
+	echo "Похоже, у вас не установлены dialog и ncurses."
+	echo "Устаналиваю..."
+	pacman -Sy dialog ncurses || {
+		echo "Установить пакеты не получилось :(" >&2
+		echo "Попробуйте проверить зеркала/количество свободного места в LiveCD, а затем установите пакеты самостоятельно" >&2
+		exit 1
+	}
+fi
 [ "$(tty | grep tty)" ] && { setfont cyr-sun16; loadkeys ru; }
 [[ "$(tty | grep tty)" && "$(systemd-detect-virt)" == "vmware" ]] && setterm --default
 _get_size
@@ -238,6 +272,8 @@ if [[ "$1" == step* ]]; then
 else
 ####################
 _choose_username
+_choose_passwd_user
+_choose_passwd_root
 _choose_hostname
 _connect_network
 _setup_clocks
@@ -258,21 +294,25 @@ done
 )"
 eval 'dialog --backtitle "Русский инсталлятор Арч Линукса" --title "vkidalog" --menu "Ctrl+Shift для переключения раскладки; Ctrl+C для выхода; для управления: стрелочки, Tab, Enter, Esc" $w $h ${#_start_cols[*]} '$_vars'' 2> "$tmpdir/choice" || exit 0
 	case "$(<"$tmpdir/choice")" in
-		"${_start_cols[0]}") _choose_username  ;;
-		"${_start_cols[1]}") _choose_hostname  ;;
-		"${_start_cols[2]}") _connect_network  ;;
-		"${_start_cols[3]}") _setup_clocks     ;;
-		"${_start_cols[4]}") _setup_mirrors    ;;
-		"${_start_cols[5]}") _part_disk        ;;
-		"${_start_cols[6]}") _choose_apps      ;;
-		"${_start_cols[7]}") _start_install    ;;
+		"${_start_cols[0]}") _choose_username     ;;
+		"${_start_cols[1]}") _choose_passwd_user  ;;
+		"${_start_cols[2]}") _choose_passwd_root  ;;
+		"${_start_cols[3]}") _choose_hostname     ;;
+		"${_start_cols[4]}") _connect_network     ;;
+		"${_start_cols[5]}") _setup_clocks        ;;
+		"${_start_cols[6]}") _setup_mirrors       ;;
+		"${_start_cols[7]}") _part_disk           ;;
+		"${_start_cols[8]}") _choose_apps         ;;
+		"${_start_cols[9]}") _start_install       ;;
 	esac
 done
 	#_error=0
 	#[ -f "$tmpdir/1" ] || _error=1
 	#[ -f "$tmpdir/2" ] || _error=1
+	#[ -f "$tmpdir/3" ] || _error=1
 	#[ -f "$tmpdir/4" ] || _error=1
 	#[ -f "$tmpdir/6" ] || _error=1
+	#[ -f "$tmpdir/8" ] || _error=1
 	#if [ "$_error" == 1 ]; then
 	#	continue
 	#fi
@@ -306,11 +346,13 @@ done
 		packages_gnome="gnome"
 		packages_kde="plasma konsole konqueror dolphin"
 		packages_xfce="xfce4 xfce4-goodies"
+		packages_e="enlightenment terminology acpid connman"
 		for inn in $(<"$tmpdir/de"); do
 			case "$inn" in
 				KDE) packages+=("$packages_kde") ;;
 				GNOME) packages+=("$packages_gnome") ;;
 				XFCE) packages+=("$packages_xfce") ;;
+				Enlightenment) packages+=("$packages_e") ;;
 			esac
 		done
 	fi
@@ -348,12 +390,13 @@ echo \$host >> /etc/hostname
 echo "==> Настраиваю сеть"
 echo "127.0.0.1 localhost" >> /etc/hosts
 echo "::1 localhost" >> /etc/hosts
-echo "<== Настройка пароля для root"
-passwd root
+echo "==> Настраиваю пользователей"
+echo "==> Настройка пароля для root"
+echo "root:$(<"$tmpdir/passwd_root")" | chpasswd --crypt-method SHA512
 echo "==> Создание пользователя \$name"
 useradd -m -u 1000 -U -G wheel -s /bin/bash \$name
-echo "<== Настройка пароля для \$name"
-passwd \$name
+echo "==> Настройка пароля для \$name"
+echo "\$name:$(<"$tmpdir/passwd_user")" | chpasswd --crypt-method SHA512
 echo "==> Настраиваю sudo"; sleep 1
 sed 's/^# %wheel ALL=(ALL) ALL/%wheel ALL=(ALL) ALL/g' -i /etc/sudoers
 echo "==> Ставлю systemd-boot"; sleep 1
