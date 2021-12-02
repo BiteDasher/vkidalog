@@ -230,6 +230,7 @@ _start_install() {
 }
 
 [ "$(tty | grep tty)" ] && { setfont cyr-sun16; loadkeys ru; }
+[[ "$(tty | grep tty)" && "$(systemd-detect-virt)" == "vmware" ]] && setterm --default
 _get_size
 #systemctl stop systemd-resolved || :
 if [[ "$1" == step* ]]; then
